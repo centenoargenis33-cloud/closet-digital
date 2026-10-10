@@ -61,19 +61,26 @@ with tab_agregar:
                 st.warning("⚠️ Escribe el color antes de guardar.")
             else:
                 with st.spinner("Subiendo foto a Drive y registrando en Sheets..."):
-                    # 1. Subir la foto a la carpeta de Drive
-                    media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=False)
-                    metadata = {'name': f"{categoria}_{color_manual}.jpg", 'parents': [FOLDER_ID]}
-                    archivo_drive = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
-                    id_foto = archivo_drive.get('id')
+                    try:
+                        # 1. Subir la foto a la carpeta de Drive
+                        media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=False)
+                        metadata = {'name': f"{categoria}_{color_manual}.jpg", 'parents': [FOLDER_ID]}
+                        archivo_drive = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
+                        id_foto = archivo_drive.get('id')
 
-                    # 2. Guardar los datos en el Excel
-                    registros = hoja.get_all_records()
-                    nuevo_id = 1 if not registros else max([int(r['id']) for r in registros if str(r['id']).isdigit()] + [0]) + 1
-                    hoja.append_row([nuevo_id, categoria, estado, id_foto, color_manual])
-                    
-                    st.cache_data.clear() # Limpiar memoria para ver los cambios
-                    st.success("¡Prenda guardada exitosamente en la nube!")
+                        # 2. Guardar los datos en el Excel
+                        registros = hoja.get_all_records()
+                        nuevo_id = 1 if not registros else max([int(r['id']) for r in registros if str(r['id']).isdigit()] + [0]) + 1
+                        hoja.append_row([nuevo_id, categoria, estado, id_foto, color_manual])
+                        
+                        st.cache_data.clear() # Limpiar memoria para ver los cambios
+                        st.success("¡Prenda guardada exitosamente en la nube!")
+                        
+                    except Exception as error_google:
+                        if hasattr(error_google, 'content'):
+                            st.error(f"🛑 EL ERROR REAL DE GOOGLE ES: {error_google.content.decode('utf-8')}")
+                        else:
+                            st.error(f"🛑 OTRO ERROR: {error_google}")
 
 # ==========================================
 # PESTAÑA 2: MI GALERÍA
