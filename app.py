@@ -65,7 +65,14 @@ with tab_agregar:
                         # 1. Subir la foto a la carpeta de Drive
                         media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=False)
                         metadata = {'name': f"{categoria}_{color_manual}.jpg", 'parents': [FOLDER_ID]}
-                        archivo_drive = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
+                        
+                        # AQUÍ ESTÁ LA MAGIA: supportsAllDrives=True le dice a Google que use tu espacio
+                        archivo_drive = drive_service.files().create(
+                            body=metadata, 
+                            media_body=media, 
+                            fields='id',
+                            supportsAllDrives=True 
+                        ).execute()
                         id_foto = archivo_drive.get('id')
 
                         # 2. Guardar los datos en el Excel
@@ -81,7 +88,6 @@ with tab_agregar:
                             st.error(f"🛑 EL ERROR REAL DE GOOGLE ES: {error_google.content.decode('utf-8')}")
                         else:
                             st.error(f"🛑 OTRO ERROR: {error_google}")
-
 # ==========================================
 # PESTAÑA 2: MI GALERÍA
 # ==========================================
