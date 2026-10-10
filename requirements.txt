@@ -4,3 +4,4 @@ google-genai
 gspread
 google-api-python-client
 google-auth
+requests
