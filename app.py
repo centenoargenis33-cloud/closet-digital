@@ -11,7 +11,7 @@ from google import genai
 # --- 1. CONFIGURACIÓN DE IDs ---
 API_KEY = st.secrets["GEMINI_API_KEY"]
 SHEET_ID = "1tVkG_cuKvJnsrIx5BPi-LN4kxEAYUKVuVd2uR92coaM"
-FOLDER_ID = "1soUp4Ur99A699EQOknr6jkdk9YzuB1N6?hl=es"
+FOLDER_ID = "1soUp4Ur99A699EQOknr6jkdk9YzuB1N6"
 
 # --- 2. CONEXIÓN A GOOGLE DRIVE Y SHEETS ---
 @st.cache_resource
