@@ -62,7 +62,7 @@ with tab_agregar:
             else:
                 with st.spinner("Subiendo foto a Drive y registrando en Sheets..."):
                     # 1. Subir la foto a la carpeta de Drive
-                    media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=True)
+                    media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=False)
                     metadata = {'name': f"{categoria}_{color_manual}.jpg", 'parents': [FOLDER_ID]}
                     archivo_drive = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
                     id_foto = archivo_drive.get('id')
