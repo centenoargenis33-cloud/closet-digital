@@ -1,48 +1,35 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 import json
 import io
+import requests
+import base64
 from PIL import Image
 from google import genai
 
 # --- 1. CONFIGURACIÓN DE IDs ---
 API_KEY = st.secrets["GEMINI_API_KEY"]
+IMGBB_API_KEY = st.secrets["IMGBB_API_KEY"]
 SHEET_ID = "1tVkG_cuKvJnsrIx5BPi-LN4kxEAYUKVuVd2uR92coaM"
-FOLDER_ID = "1soUp4Ur99A699EQOknr6jkdk9YzuB1N6"
 
-# --- 2. CONEXIÓN A GOOGLE DRIVE Y SHEETS ---
+# --- 2. CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
-def conectar_google():
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+def conectar_sheets():
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     cred_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
     creds = Credentials.from_service_account_info(cred_dict, scopes=SCOPES)
-    gs = gspread.authorize(creds)
-    drive = build('drive', 'v3', credentials=creds)
-    return gs, drive
+    return gspread.authorize(creds)
 
-gs, drive_service = conectar_google()
+gs = conectar_sheets()
 hoja = gs.open_by_key(SHEET_ID).sheet1
-
-@st.cache_data(show_spinner=False)
-def descargar_imagen(file_id):
-    try:
-        request = drive_service.files().get_media(fileId=file_id)
-        return request.execute()
-    except Exception:
-        return None
 
 # --- 3. INTERFAZ DE LA APLICACIÓN ---
 st.title("👕 Mi Clóset Digital ☁️")
-st.write("¡Tu inventario ahora está sincronizado con tu Google Drive!")
+st.write("¡Inventario en la nube activado!")
 
 tab_agregar, tab_galeria, tab_asesor = st.tabs(["➕ Agregar Prenda", "📸 Mi Galería", "🤖 Asesor de Estilo"])
 
-# ==========================================
-# PESTAÑA 1: AGREGAR PRENDA (AHORA A DRIVE)
-# ==========================================
 with tab_agregar:
     col1, col2 = st.columns(2)
     with col1:
@@ -56,47 +43,41 @@ with tab_agregar:
     if imagen is not None:
         st.image(imagen, width=250)
         
-        if st.button("☁️ Subir a mi Drive y Guardar"):
+        if st.button("☁️ Guardar Prenda"):
             if not color_manual.strip():
                 st.warning("⚠️ Escribe el color antes de guardar.")
             else:
-                with st.spinner("Subiendo foto a Drive y registrando en Sheets..."):
+                with st.spinner("Subiendo foto a la nube y registrando en Excel..."):
                     try:
-                        # 1. Subir la foto a la carpeta de Drive
-                        media = MediaIoBaseUpload(io.BytesIO(imagen.getvalue()), mimetype=imagen.type, resumable=False)
-                        metadata = {'name': f"{categoria}_{color_manual}.jpg", 'parents': [FOLDER_ID]}
+                        # 1. Subir a ImgBB
+                        url = "https://api.imgbb.com/1/upload"
+                        payload = {
+                            "key": IMGBB_API_KEY,
+                            "image": base64.b64encode(imagen.getvalue()).decode("utf-8")
+                        }
+                        res = requests.post(url, data=payload)
                         
-                        # AQUÍ ESTÁ LA MAGIA: supportsAllDrives=True le dice a Google que use tu espacio
-                        archivo_drive = drive_service.files().create(
-                            body=metadata, 
-                            media_body=media, 
-                            fields='id',
-                            supportsAllDrives=True 
-                        ).execute()
-                        id_foto = archivo_drive.get('id')
-
-                        # 2. Guardar los datos en el Excel
-                        registros = hoja.get_all_records()
-                        nuevo_id = 1 if not registros else max([int(r['id']) for r in registros if str(r['id']).isdigit()] + [0]) + 1
-                        hoja.append_row([nuevo_id, categoria, estado, id_foto, color_manual])
-                        
-                        st.cache_data.clear() # Limpiar memoria para ver los cambios
-                        st.success("¡Prenda guardada exitosamente en la nube!")
-                        
-                    except Exception as error_google:
-                        if hasattr(error_google, 'content'):
-                            st.error(f"🛑 EL ERROR REAL DE GOOGLE ES: {error_google.content.decode('utf-8')}")
+                        if res.status_code == 200:
+                            url_foto = res.json()["data"]["url"]
+                            
+                            # 2. Guardar en Google Sheets
+                            registros = hoja.get_all_records()
+                            nuevo_id = 1 if not registros else max([int(r['id']) for r in registros if str(r['id']).isdigit()] + [0]) + 1
+                            hoja.append_row([nuevo_id, categoria, estado, url_foto, color_manual])
+                            
+                            st.cache_data.clear()
+                            st.success("¡Prenda guardada exitosamente!")
                         else:
-                            st.error(f"🛑 OTRO ERROR: {error_google}")
-# ==========================================
-# PESTAÑA 2: MI GALERÍA
-# ==========================================
+                            st.error(f"Error al subir la foto: {res.text}")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
 with tab_galeria:
     st.subheader("📚 Álbumes de tu Clóset")
     registros = hoja.get_all_records()
     
     if not registros:
-        st.info("Aún no tienes prendas. ¡Agrega tu primera foto desde tu celular!")
+        st.info("Aún no tienes prendas.")
     else:
         categorias_guardadas = list(set([str(r['categoria']) for r in registros]))
         album_sel = st.selectbox("📂 Elige una categoría:", categorias_guardadas)
@@ -105,9 +86,7 @@ with tab_galeria:
         cols = st.columns(3)
         for idx, prenda in enumerate(prendas_album):
             with cols[idx % 3]:
-                img_bytes = descargar_imagen(prenda['ruta_imagen'])
-                if img_bytes:
-                    st.image(img_bytes, caption=f"{prenda['estado']} \n🎨 {prenda['color']}", use_container_width=True)
+                st.image(prenda['ruta_imagen'], caption=f"{prenda['estado']} \n🎨 {prenda['color']}", use_container_width=True)
                 
                 c1, c2 = st.columns(2)
                 with c1:
@@ -130,9 +109,6 @@ with tab_galeria:
                         st.cache_data.clear()
                         st.rerun()
 
-# ==========================================
-# PESTAÑA 3: ASESOR DE ESTILO (IA)
-# ==========================================
 with tab_asesor:
     st.subheader("🧠 Calificador de Outfits")
     ocasion = st.text_input("🎯 ¿A dónde vas?", placeholder="Ej. A clases, al gym, a una cita...")
@@ -151,14 +127,16 @@ with tab_asesor:
         cols = st.columns(4)
         for idx, p in enumerate(ropa_limpia):
             with cols[idx % 4]:
-                img_bytes = descargar_imagen(p['ruta_imagen'])
-                if img_bytes:
-                    st.image(img_bytes, use_container_width=True)
-                    if st.checkbox("✔", key=f"chk_{p['id']}"):
-                        seleccionadas.append(p)
-                        imagenes_ia.append(Image.open(io.BytesIO(img_bytes)))
-                        desc_ia += f"- {p['categoria']} (Color: {p['color']})\n"
-                        
+                st.image(p['ruta_imagen'], use_container_width=True)
+                if st.checkbox("✔", key=f"chk_{p['id']}"):
+                    seleccionadas.append(p)
+                    try:
+                        img_data = requests.get(p['ruta_imagen']).content
+                        imagenes_ia.append(Image.open(io.BytesIO(img_data)))
+                    except:
+                        pass
+                    desc_ia += f"- {p['categoria']} (Color: {p['color']})\n"
+                    
         st.divider()
         if st.button("✨ Calificar Outfit con IA") and seleccionadas:
             if not ocasion:
